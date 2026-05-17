@@ -1,18 +1,19 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GanttSync - PE-Body Project</title>
-    
+
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>tailwind.config = { corePlugins: { preflight: true } }</script>
-    
+
     <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    
+
     <!-- Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
@@ -26,22 +27,49 @@
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
     
+    <!-- Gradio Client for AI Assistant -->
+    <script type="module">
+        import { Client } from "https://cdn.jsdelivr.net/npm/@gradio/client/dist/index.min.js";
+        window.GradioClient = Client;
+    </script>
+
     <style>
-        body { margin: 0; padding: 0; font-family: 'Inter', sans-serif; overflow: hidden; background: #f8fafc; }
-        ::-webkit-scrollbar { width: 8px; height: 8px; }
-        ::-webkit-scrollbar-track { background: #f1f5f9; }
-        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-        
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            background: #f8fafc;
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
         input[type="number"]::-webkit-outer-spin-button,
         input[type="number"]::-webkit-inner-spin-button {
             -webkit-appearance: none;
             margin: 0;
         }
+
         input[type="number"] {
             -moz-appearance: textfield;
         }
-        
+
         .dependency-line {
             stroke: #94a3b8;
             stroke-width: 1;
@@ -50,7 +78,7 @@
             stroke-dasharray: 2, 4;
             animation: dash 20s linear infinite;
         }
-        
+
         .dependency-line.solid {
             stroke: #cbd5e1;
             stroke-dasharray: 2, 4;
@@ -58,10 +86,13 @@
         }
 
         @keyframes dash {
-            to { stroke-dashoffset: 400; }
+            to {
+                stroke-dashoffset: 400;
+            }
         }
     </style>
 </head>
+
 <body>
     <div id="root"></div>
 
@@ -127,8 +158,8 @@
 
             const start = parseDate(startDateStr);
             const end = parseDate(endDateStr);
-            const evalDate = new Date(); 
-            evalDate.setHours(0, 0, 0, 0); 
+            const evalDate = new Date();
+            evalDate.setHours(0, 0, 0, 0);
 
             if (evalDate < start) {
                 if (progress > 0) return 'In Progress';
@@ -136,12 +167,12 @@
             }
 
             const totalDurationDays = diffDays(startDateStr, endDateStr) + 1;
-            const elapsedDays = diffDays(startDateStr, formatDate(evalDate)); 
+            const elapsedDays = diffDays(startDateStr, formatDate(evalDate));
 
             let percentPlan = 100;
             if (totalDurationDays > 0) {
                 percentPlan = (elapsedDays / totalDurationDays) * 100;
-                percentPlan = Math.max(0, Math.min(100, percentPlan)); 
+                percentPlan = Math.max(0, Math.min(100, percentPlan));
             }
 
             if (progress < (percentPlan - 0.5)) return 'Delay';
@@ -163,13 +194,13 @@
                     }
                     return node;
                 }
-                
+
                 let totalProgressWeight = 0;
                 let totalDuration = 0;
                 let minStart = null;
                 let maxEnd = null;
                 let validChildrenCount = 0;
-                
+
                 let hasDelay = false;
                 let hasInProgress = false;
                 let allComplete = true;
@@ -180,15 +211,15 @@
                         const endD = parseDate(child.endDate);
                         if (!minStart || startD < minStart) minStart = startD;
                         if (!maxEnd || endD > maxEnd) maxEnd = endD;
-                        
+
                         const duration = diffDays(child.startDate, child.endDate) + 1;
                         totalProgressWeight += (child.progress * duration);
                         totalDuration += duration;
-                        
+
                         if (child.status === 'Delay') hasDelay = true;
                         if (child.status === 'In Progress') hasInProgress = true;
                         if (child.status !== 'Complete') allComplete = false;
-                        
+
                         validChildrenCount++;
                     }
                 });
@@ -201,7 +232,7 @@
                     }
                     if (minStart) node.startDate = formatDate(minStart);
                     if (maxEnd) node.endDate = formatDate(maxEnd);
-                    
+
                     if (hasDelay) {
                         node.status = 'Delay';
                     } else if (allComplete) {
@@ -268,7 +299,7 @@
 
                     if (maxEndDateStr) {
                         const expectedStartD = parseDate(maxEndDateStr);
-                        expectedStartD.setDate(expectedStartD.getDate() + 1); 
+                        expectedStartD.setDate(expectedStartD.getDate() + 1);
                         const expectedStartStr = formatDate(expectedStartD);
 
                         if (task.startDate && task.startDate < expectedStartStr) {
@@ -329,12 +360,116 @@
             { id: 'act', label: 'Act', center: true }
         ];
 
+        let globalAiMessages = [];
+
+        const AIAssistantWidget = ({ items }) => {
+            const [messages, setMessages] = useState(globalAiMessages);
+
+            useEffect(() => {
+                globalAiMessages = messages;
+            }, [messages]);
+            const [input, setInput] = useState('');
+            const [isLoading, setIsLoading] = useState(false);
+            const messagesEndRef = useRef(null);
+
+            const scrollToBottom = () => {
+                messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+            };
+
+            useEffect(() => {
+                scrollToBottom();
+            }, [messages]);
+
+            const handleSend = async () => {
+                if (!input.trim() || isLoading) return;
+                
+                const userMessage = input.trim();
+                setInput('');
+                setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
+                setIsLoading(true);
+
+                try {
+                    const tasks = items.filter(i => i.type !== 'Project' && i.type !== 'Milestone');
+                    const projects = items.filter(i => i.type === 'Project');
+                    const summary = `Projects: ${projects.length}, Tasks: ${tasks.length}. Data: ` + JSON.stringify(items.map(i => ({ task: i.taskName, status: i.status, progress: Math.round(i.progress || 0) + '%', pic: i.pic || 'Unassigned' })));
+                    const promptText = `Context about my project data: ${summary}\n\nUser Question: ${userMessage}`;
+
+                    if (!window.GradioClient) {
+                        throw new Error("AI Client is still loading. Please try again in a moment.");
+                    }
+                    
+                    const client = await window.GradioClient.connect("RANGSIMUN/peb-project-manager");
+                    const result = await client.predict("/ai_assistant", [promptText]);
+                    
+                    const aiResponse = result.data[0];
+                    setMessages(prev => [...prev, { role: 'ai', content: aiResponse }]);
+                } catch (error) {
+                    console.error("AI Assistant Error:", error);
+                    setMessages(prev => [...prev, { role: 'system', content: 'Error: ' + error.message }]);
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            return (
+                <div className="flex flex-col h-[400px] bg-slate-50 rounded-xl overflow-hidden shadow-inner">
+                    <div className="flex-1 p-5 overflow-y-auto space-y-4">
+                        {messages.length === 0 && (
+                            <div className="text-center text-slate-400 mt-12 flex flex-col items-center">
+                                <div className="w-16 h-16 bg-blue-100 text-blue-500 rounded-full flex items-center justify-center mb-4">
+                                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
+                                </div>
+                                <p className="font-medium text-slate-600">AI Assistant is ready!</p>
+                                <p className="text-sm mt-1">Ask me anything about your project data.</p>
+                            </div>
+                        )}
+                        {messages.map((msg, idx) => (
+                            <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-br-none shadow-md shadow-blue-500/20' : msg.role === 'system' ? 'bg-rose-50 text-rose-600 border border-rose-100 rounded-bl-none' : 'bg-white border border-slate-200 text-slate-700 rounded-bl-none shadow-sm'}`}>
+                                    <p className="whitespace-pre-wrap">{msg.content}</p>
+                                </div>
+                            </div>
+                        ))}
+                        {isLoading && (
+                            <div className="flex justify-start">
+                                <div className="max-w-[80%] rounded-2xl px-5 py-3 bg-white border border-slate-200 text-slate-500 rounded-bl-none shadow-sm flex items-center gap-3">
+                                    <svg className="animate-spin h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                    <span className="text-sm font-medium">Thinking...</span>
+                                </div>
+                            </div>
+                        )}
+                        <div ref={messagesEndRef} />
+                    </div>
+                    <div className="p-4 bg-white border-t border-slate-200 shrink-0">
+                        <div className="flex items-center gap-3 relative max-w-3xl mx-auto">
+                            <input
+                                type="text"
+                                value={input}
+                                onChange={e => setInput(e.target.value)}
+                                onKeyDown={e => { if (e.key === 'Enter') handleSend(); }}
+                                placeholder="Ask about tasks, delays, progress..."
+                                className="flex-1 px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all pr-14 shadow-inner"
+                                disabled={isLoading}
+                            />
+                            <button
+                                onClick={handleSend}
+                                disabled={isLoading || !input.trim()}
+                                className="absolute right-2 top-2 bottom-2 aspect-square flex items-center justify-center bg-blue-600 text-white rounded-full hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-blue-600 transition-colors shadow-md shadow-blue-500/20"
+                            >
+                                <svg className="w-4.5 h-4.5 translate-x-px translate-y-px" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         const Dashboard = ({ items }) => {
             const [healthScale, setHealthScale] = useState('week');
             const tasks = items.filter(i => i.type !== 'Project' && i.type !== 'Milestone');
             const delayedTasks = tasks.filter(t => t.status === 'Delay');
             const completeTasks = tasks.filter(t => t.status === 'Complete');
-            
+
             const totalProgress = items.filter(i => i.type === 'Project').reduce((acc, curr, _, arr) => acc + (curr.progress / arr.length), 0);
             const healthTasks = tasks.filter(t => t.startDate && t.endDate);
             const healthData = (() => {
@@ -507,15 +642,27 @@
                             </ul>
                         </div>
                     </div>
+                    <div className="mt-6 bg-white p-6 rounded-xl shadow-sm border border-slate-100 mb-8">
+                        <div className="flex items-center gap-3 mb-5">
+                            <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-800">AI Project Assistant</h3>
+                                <p className="text-xs text-slate-500 mt-0.5">Powered by Huggingface AI - Ask anything about your project data</p>
+                            </div>
+                        </div>
+                        <AIAssistantWidget items={items} />
+                    </div>
                 </div>
             );
         };
 
         const statusConfig = {
-            'Complete':    { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-500', ring: 'ring-emerald-500/20' },
-            'In Progress': { bg: 'bg-blue-100',    text: 'text-blue-700',    border: 'border-blue-200',    dot: 'bg-blue-500',    ring: 'ring-blue-500/20' },
-            'Delay':       { bg: 'bg-rose-100',    text: 'text-rose-700',    border: 'border-rose-200',    dot: 'bg-rose-500',    ring: 'ring-rose-500/20' },
-            'Not Started': { bg: 'bg-slate-100',   text: 'text-slate-600',   border: 'border-slate-200',   dot: 'bg-slate-400',   ring: 'ring-slate-400/20' },
+            'Complete': { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-500', ring: 'ring-emerald-500/20' },
+            'In Progress': { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-200', dot: 'bg-blue-500', ring: 'ring-blue-500/20' },
+            'Delay': { bg: 'bg-rose-100', text: 'text-rose-700', border: 'border-rose-200', dot: 'bg-rose-500', ring: 'ring-rose-500/20' },
+            'Not Started': { bg: 'bg-slate-100', text: 'text-slate-600', border: 'border-slate-200', dot: 'bg-slate-400', ring: 'ring-slate-400/20' },
         };
 
         const ProgressTaskRow = ({ task, tone }) => {
@@ -554,7 +701,7 @@
             const progressPercent = Math.round(job.progress || 0);
             const progressBarColor = job.status === 'Complete' ? 'bg-emerald-500'
                 : job.status === 'Delay' ? 'bg-rose-500'
-                : 'bg-blue-500';
+                    : 'bg-blue-500';
 
             const handleSubmitUpdate = () => {
                 if (!updateText.trim()) return;
@@ -646,7 +793,7 @@
                             </div>
                             {updates.length > 0 && (
                                 <div className="mt-1">
-                                    <div 
+                                    <div
                                         onClick={() => setIsModalOpen(true)}
                                         className="flex items-start gap-2 text-xs bg-slate-50 hover:bg-slate-100 cursor-pointer transition-colors rounded px-2 py-1.5"
                                         title="Click to view update history"
@@ -676,7 +823,7 @@
                                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                                     </button>
                                 </div>
-                                
+
                                 <div className="flex flex-col md:flex-row flex-1 overflow-hidden min-h-[400px]">
                                     <div className="md:w-1/2 flex flex-col border-r border-slate-100 bg-slate-50/30">
                                         <div className="px-5 py-3.5 border-b border-slate-100 bg-white flex items-center gap-2 shrink-0">
@@ -1243,7 +1390,7 @@
                                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                                         </button>
                                     </div>
-                                    
+
                                     <div className="flex flex-col md:flex-row flex-1 overflow-hidden min-h-[400px]">
                                         <div className="md:w-1/2 flex flex-col border-r border-slate-100 bg-slate-50/30">
                                             <div className="px-5 py-3.5 border-b border-slate-100 bg-white flex items-center gap-2 shrink-0">
@@ -1310,12 +1457,12 @@
             const [localItem, setLocalItem] = useState(item);
             const [dragState, setDragState] = useState({ active: false, deltaX: 0, type: null });
             const [isEditingRemark, setIsEditingRemark] = useState(false);
-            
+
             const currentDeltaDaysRef = useRef(0);
-            
-            useEffect(() => { 
+
+            useEffect(() => {
                 if (!dragState.active) {
-                    setLocalItem(item); 
+                    setLocalItem(item);
                 }
             }, [item, dragState.active]);
 
@@ -1327,19 +1474,19 @@
             };
 
             const handleChange = (field, val) => {
-                setLocalItem(prev => ({...prev, [field]: val}));
+                setLocalItem(prev => ({ ...prev, [field]: val }));
             };
 
             const handleKeyDown = (field, e) => {
                 if (e.key === 'Enter') {
                     e.preventDefault();
-                    e.target.blur(); 
+                    e.target.blur();
                 }
             };
 
             const Icon = Icons[item.type] || Icons.Task;
             const isMilestone = item.type === 'Milestone';
-            
+
             let baseLeft = 0;
             let baseWidth = 0;
             let startOffset = 0;
@@ -1376,10 +1523,10 @@
             const handleInteraction = (e, type) => {
                 if (!isEditMode) return;
                 if (e.button === 2) return;
-                if (isMilestone) return; 
+                if (isMilestone) return;
                 e.preventDefault();
                 e.stopPropagation();
-                
+
                 if (isDrawingTarget && type === 'move') {
                     completeDrawing(item.id);
                     return;
@@ -1390,44 +1537,44 @@
                 const initialEnd = localItem.endDate;
                 const initialProgress = localItem.progress || 0;
                 const initialScrollLeft = scrollContainerRef.current ? scrollContainerRef.current.scrollLeft : 0;
-                
+
                 currentDeltaDaysRef.current = 0;
                 let lastClientX = startX;
 
                 const updateDrag = (clientX) => {
                     if (type === 'progress') {
-                         const scrollDelta = scrollContainerRef.current ? scrollContainerRef.current.scrollLeft - initialScrollLeft : 0;
-                         const totalDeltaX = (clientX - startX) + scrollDelta;
-                         const deltaPercent = (totalDeltaX / Math.max(baseWidth, dayWidth)) * 100;
-                         let newProg = Math.round(initialProgress + deltaPercent);
-                         newProg = Math.max(0, Math.min(100, newProg));
-                         setLocalItem(prev => ({...prev, progress: newProg}));
+                        const scrollDelta = scrollContainerRef.current ? scrollContainerRef.current.scrollLeft - initialScrollLeft : 0;
+                        const totalDeltaX = (clientX - startX) + scrollDelta;
+                        const deltaPercent = (totalDeltaX / Math.max(baseWidth, dayWidth)) * 100;
+                        let newProg = Math.round(initialProgress + deltaPercent);
+                        newProg = Math.max(0, Math.min(100, newProg));
+                        setLocalItem(prev => ({ ...prev, progress: newProg }));
                     } else {
-                         const currentScrollLeft = scrollContainerRef.current ? scrollContainerRef.current.scrollLeft : 0;
-                         const deltaX = (clientX - startX) + (currentScrollLeft - initialScrollLeft);
-                         
-                         setDragState({ active: true, deltaX, type });
-                         
-                         const deltaDays = Math.round(deltaX / dayWidth);
-                         if (deltaDays !== currentDeltaDaysRef.current) {
-                             currentDeltaDaysRef.current = deltaDays;
-                             
-                             let newStart = initialStart;
-                             let newEnd = initialEnd;
+                        const currentScrollLeft = scrollContainerRef.current ? scrollContainerRef.current.scrollLeft : 0;
+                        const deltaX = (clientX - startX) + (currentScrollLeft - initialScrollLeft);
 
-                             if (type === 'move') {
-                                 newStart = addDays(initialStart, deltaDays);
-                                 newEnd = addDays(initialEnd, deltaDays);
-                             } else if (type === 'resize-left') {
-                                 newStart = addDays(initialStart, deltaDays);
-                                 if (newStart > newEnd) newStart = newEnd;
-                             } else if (type === 'resize-right') {
-                                 newEnd = addDays(initialEnd, deltaDays);
-                                 if (newEnd < newStart) newEnd = newStart;
-                             }
-                             
-                             onPreviewDates(item.id, newStart, newEnd);
-                         }
+                        setDragState({ active: true, deltaX, type });
+
+                        const deltaDays = Math.round(deltaX / dayWidth);
+                        if (deltaDays !== currentDeltaDaysRef.current) {
+                            currentDeltaDaysRef.current = deltaDays;
+
+                            let newStart = initialStart;
+                            let newEnd = initialEnd;
+
+                            if (type === 'move') {
+                                newStart = addDays(initialStart, deltaDays);
+                                newEnd = addDays(initialEnd, deltaDays);
+                            } else if (type === 'resize-left') {
+                                newStart = addDays(initialStart, deltaDays);
+                                if (newStart > newEnd) newStart = newEnd;
+                            } else if (type === 'resize-right') {
+                                newEnd = addDays(initialEnd, deltaDays);
+                                if (newEnd < newStart) newEnd = newStart;
+                            }
+
+                            onPreviewDates(item.id, newStart, newEnd);
+                        }
                     }
                 };
 
@@ -1439,13 +1586,13 @@
                         const edgeThreshold = 80;
                         const maxSpeed = 15;
                         let speed = 0;
-                        
+
                         const frozenColIndex = ALL_COLUMNS.findIndex(c => c.id === frozenColumn);
                         const frozenCols = ALL_COLUMNS.slice(0, frozenColIndex + 1);
                         const currentFrozenWidth = frozenCols.reduce((sum, col) => sum + colWidths[col.id], 0);
 
                         const visibleLeftEdge = scrollRect.left + Math.max(currentFrozenWidth, totalLeftWidth - scrollEl.scrollLeft);
-                        
+
                         if (lastClientX < visibleLeftEdge + edgeThreshold) {
                             const dist = (visibleLeftEdge + edgeThreshold) - lastClientX;
                             speed = -Math.min(maxSpeed, (dist / edgeThreshold) * maxSpeed);
@@ -1456,7 +1603,7 @@
 
                         if (speed !== 0) {
                             scrollEl.scrollBy({ left: speed });
-                            updateDrag(lastClientX); 
+                            updateDrag(lastClientX);
                         }
                     }
                     rafId = requestAnimationFrame(scrollLoop);
@@ -1465,7 +1612,7 @@
                 const onMouseMove = (moveEvent) => {
                     lastClientX = moveEvent.clientX;
                     updateDrag(lastClientX);
-                    
+
                     if (type === 'progress' && !dragState.active) {
                         setDragState({ active: true, deltaX: 0, type });
                     }
@@ -1478,35 +1625,35 @@
                     document.removeEventListener('mouseup', onMouseUp);
 
                     if (type === 'progress') {
-                         const scrollDelta = scrollContainerRef.current ? scrollContainerRef.current.scrollLeft - initialScrollLeft : 0;
-                         const totalDeltaX = (lastClientX - startX) + scrollDelta;
-                         const deltaPercent = (totalDeltaX / Math.max(baseWidth, dayWidth)) * 100;
-                         let newProg = Math.round(initialProgress + deltaPercent);
-                         newProg = Math.max(0, Math.min(100, newProg));
-                         handleBlur('progress', newProg);
+                        const scrollDelta = scrollContainerRef.current ? scrollContainerRef.current.scrollLeft - initialScrollLeft : 0;
+                        const totalDeltaX = (lastClientX - startX) + scrollDelta;
+                        const deltaPercent = (totalDeltaX / Math.max(baseWidth, dayWidth)) * 100;
+                        let newProg = Math.round(initialProgress + deltaPercent);
+                        newProg = Math.max(0, Math.min(100, newProg));
+                        handleBlur('progress', newProg);
                     } else {
-                         const currentScrollLeft = scrollContainerRef.current ? scrollContainerRef.current.scrollLeft : 0;
-                         const deltaX = (lastClientX - startX) + (currentScrollLeft - initialScrollLeft);
-                         const deltaDays = Math.round(deltaX / dayWidth);
-                         
-                         if (deltaDays !== 0) {
-                             let newStart = initialStart;
-                             let newEnd = initialEnd;
-                             if (type === 'move') {
-                                 newStart = addDays(initialStart, deltaDays);
-                                 newEnd = addDays(initialEnd, deltaDays);
-                             } else if (type === 'resize-left') {
-                                 newStart = addDays(initialStart, deltaDays);
-                                 if (newStart > newEnd) newStart = newEnd;
-                             } else if (type === 'resize-right') {
-                                 newEnd = addDays(initialEnd, deltaDays);
-                                 if (newEnd < newStart) newEnd = newStart;
-                             }
-                             updateDates(item.id, newStart, newEnd);
-                         } else {
-                             setLocalItem(item);
-                             updateDates(item.id, initialStart, initialEnd);
-                         }
+                        const currentScrollLeft = scrollContainerRef.current ? scrollContainerRef.current.scrollLeft : 0;
+                        const deltaX = (lastClientX - startX) + (currentScrollLeft - initialScrollLeft);
+                        const deltaDays = Math.round(deltaX / dayWidth);
+
+                        if (deltaDays !== 0) {
+                            let newStart = initialStart;
+                            let newEnd = initialEnd;
+                            if (type === 'move') {
+                                newStart = addDays(initialStart, deltaDays);
+                                newEnd = addDays(initialEnd, deltaDays);
+                            } else if (type === 'resize-left') {
+                                newStart = addDays(initialStart, deltaDays);
+                                if (newStart > newEnd) newStart = newEnd;
+                            } else if (type === 'resize-right') {
+                                newEnd = addDays(initialEnd, deltaDays);
+                                if (newEnd < newStart) newEnd = newStart;
+                            }
+                            updateDates(item.id, newStart, newEnd);
+                        } else {
+                            setLocalItem(item);
+                            updateDates(item.id, initialStart, initialEnd);
+                        }
                     }
                     setDragState({ active: false, deltaX: 0, type: null });
                 };
@@ -1570,7 +1717,7 @@
                                         <Icons.Pin />
                                     </button>
                                 </div>
-                                <input 
+                                <input
                                     readOnly={!isEditMode}
                                     value={localItem.taskName}
                                     onChange={e => handleChange('taskName', e.target.value)}
@@ -1595,13 +1742,13 @@
                         if (isMilestone) return <div style={{ width: `${colWidths.pic}px` }} className="shrink-0"></div>;
                         return (
                             <div className="px-1 shrink-0 h-full flex items-center" style={{ width: `${colWidths.pic}px` }}>
-                                <input 
+                                <input
                                     readOnly={!isEditMode}
-                                    value={localItem.pic || ''} 
-                                    onChange={e=>handleChange('pic', e.target.value)} 
-                                    onBlur={()=>handleBlur('pic')} 
+                                    value={localItem.pic || ''}
+                                    onChange={e => handleChange('pic', e.target.value)}
+                                    onBlur={() => handleBlur('pic')}
                                     onKeyDown={e => handleKeyDown('pic', e)}
-                                    className={`w-full bg-transparent border border-transparent ${isEditMode ? 'hover:border-slate-300 focus:bg-white focus:border-blue-500 cursor-text' : 'cursor-default'} rounded px-1 py-0.5 text-xs outline-none transition-all`} 
+                                    className={`w-full bg-transparent border border-transparent ${isEditMode ? 'hover:border-slate-300 focus:bg-white focus:border-blue-500 cursor-text' : 'cursor-default'} rounded px-1 py-0.5 text-xs outline-none transition-all`}
                                     placeholder="PIC"
                                 />
                             </div>
@@ -1610,14 +1757,14 @@
                         if (isMilestone) return <div style={{ width: `${colWidths.progress}px` }} className="shrink-0"></div>;
                         return (
                             <div className="px-1 shrink-0 flex items-center justify-center gap-1 h-full" style={{ width: `${colWidths.progress}px` }}>
-                                <input 
-                                    type="number" min="0" max="100" 
-                                    value={Math.round(localItem.progress || 0)} 
-                                    onChange={e=>handleChange('progress', e.target.value)} 
-                                    onBlur={()=>handleBlur('progress')} 
+                                <input
+                                    type="number" min="0" max="100"
+                                    value={Math.round(localItem.progress || 0)}
+                                    onChange={e => handleChange('progress', e.target.value)}
+                                    onBlur={() => handleBlur('progress')}
                                     onKeyDown={e => handleKeyDown('progress', e)}
-                                    disabled={!isEditMode || !canEditProgress} 
-                                    className={`w-full bg-transparent border border-transparent ${(!isEditMode || !canEditProgress) ? 'opacity-50 cursor-default' : 'hover:border-slate-300 focus:bg-white focus:border-blue-500 cursor-text'} rounded px-1 py-0.5 text-xs outline-none transition-all text-center`} 
+                                    disabled={!isEditMode || !canEditProgress}
+                                    className={`w-full bg-transparent border border-transparent ${(!isEditMode || !canEditProgress) ? 'opacity-50 cursor-default' : 'hover:border-slate-300 focus:bg-white focus:border-blue-500 cursor-text'} rounded px-1 py-0.5 text-xs outline-none transition-all text-center`}
                                 />
                             </div>
                         );
@@ -1635,11 +1782,11 @@
                                     </div>
                                 ) : (
                                     <>
-                                        <input 
+                                        <input
                                             type="date"
-                                            value={(localItem.startDate || '').replace(/\./g, '-')} 
-                                            onChange={e => handleDateChange('startDate', e)} 
-                                            className="peer w-full bg-transparent border border-transparent hover:border-slate-300 focus:bg-white focus:border-blue-500 cursor-pointer rounded px-1 py-0.5 text-[11px] text-transparent focus:text-slate-700 outline-none transition-all [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:m-0 [&::-webkit-calendar-picker-indicator]:p-0 z-10" 
+                                            value={(localItem.startDate || '').replace(/\./g, '-')}
+                                            onChange={e => handleDateChange('startDate', e)}
+                                            className="peer w-full bg-transparent border border-transparent hover:border-slate-300 focus:bg-white focus:border-blue-500 cursor-pointer rounded px-1 py-0.5 text-[11px] text-transparent focus:text-slate-700 outline-none transition-all [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:m-0 [&::-webkit-calendar-picker-indicator]:p-0 z-10"
                                         />
                                         <span className="absolute left-1 pointer-events-none text-[11px] font-medium text-slate-600 peer-focus:hidden z-0 truncate">
                                             {shortDate(localItem.startDate)}
@@ -1662,11 +1809,11 @@
                                     </div>
                                 ) : (
                                     <>
-                                        <input 
+                                        <input
                                             type="date"
-                                            value={(localItem.endDate || '').replace(/\./g, '-')} 
-                                            onChange={e => handleDateChange('endDate', e)} 
-                                            className="peer w-full bg-transparent border border-transparent hover:border-slate-300 focus:bg-white focus:border-blue-500 cursor-pointer rounded px-1 py-0.5 text-[11px] text-transparent focus:text-slate-700 outline-none transition-all [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:m-0 [&::-webkit-calendar-picker-indicator]:p-0 z-10" 
+                                            value={(localItem.endDate || '').replace(/\./g, '-')}
+                                            onChange={e => handleDateChange('endDate', e)}
+                                            className="peer w-full bg-transparent border border-transparent hover:border-slate-300 focus:bg-white focus:border-blue-500 cursor-pointer rounded px-1 py-0.5 text-[11px] text-transparent focus:text-slate-700 outline-none transition-all [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:m-0 [&::-webkit-calendar-picker-indicator]:p-0 z-10"
                                         />
                                         <span className="absolute left-1 pointer-events-none text-[11px] font-medium text-slate-600 peer-focus:hidden z-0 truncate">
                                             {shortDate(localItem.endDate)}
@@ -1686,7 +1833,7 @@
                         return (
                             <div className="px-1 shrink-0 flex items-center justify-center h-full" style={{ width: `${colWidths.priority}px` }}>
                                 {isEditMode ? (
-                                    <select 
+                                    <select
                                         value={localItem.priority || ''}
                                         onChange={e => { handleChange('priority', e.target.value); handleBlur('priority', e.target.value); }}
                                         className={`w-full bg-transparent border rounded px-0.5 py-0.5 text-[10px] font-bold outline-none transition-all cursor-pointer hover:border-blue-400 ${bgCol}`}
@@ -1717,13 +1864,13 @@
                     case 'remark':
                         return (
                             <div className="px-1 relative shrink-0 h-full flex items-center" style={{ width: `${colWidths.remark}px` }}>
-                                <div 
+                                <div
                                     onClick={() => isEditMode && setIsEditingRemark(true)}
-                                    className={`w-full bg-transparent border border-transparent ${isEditMode ? 'hover:bg-slate-100 hover:border-slate-300 cursor-pointer' : 'cursor-default'} rounded px-1 py-0.5 text-xs outline-none transition-all truncate text-slate-600`} 
+                                    className={`w-full bg-transparent border border-transparent ${isEditMode ? 'hover:bg-slate-100 hover:border-slate-300 cursor-pointer' : 'cursor-default'} rounded px-1 py-0.5 text-xs outline-none transition-all truncate text-slate-600`}
                                     title={localItem.remark || (isEditMode ? "Click to add note" : "")}
                                 >
-                                    {localItem.remark 
-                                        ? (localItem.remark.length > 8 ? localItem.remark.substring(0, 8) + '...' : localItem.remark) 
+                                    {localItem.remark
+                                        ? (localItem.remark.length > 8 ? localItem.remark.substring(0, 8) + '...' : localItem.remark)
                                         : <span className="text-slate-400 italic">Add note...</span>}
                                 </div>
 
@@ -1771,12 +1918,12 @@
             const frozenColIndex = ALL_COLUMNS.findIndex(c => c.id === frozenColumn);
             const frozenCols = ALL_COLUMNS.slice(0, frozenColIndex + 1);
             const scrollableCols = ALL_COLUMNS.slice(frozenColIndex + 1);
-            
+
             const currentFrozenWidth = frozenCols.reduce((sum, col) => sum + colWidths[col.id], 0);
             const scrollableLeftWidth = totalLeftWidth - currentFrozenWidth;
 
             return (
-                <div 
+                <div
                     className={`flex border-b border-slate-100 group h-7 items-center relative hover:bg-blue-50/50 ${isRowPinned ? 'bg-indigo-50 shadow-[0_2px_5px_rgba(0,0,0,0.05)]' : 'bg-transparent'}`}
                     style={rowStyle}
                 >
@@ -1797,7 +1944,7 @@
                                     return (
                                         <div key={`star-${idx}`} className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-10 flex flex-col items-center group/mstone ${isEditMode ? 'cursor-pointer' : 'cursor-default'}`} style={{ left: `${leftPos}px` }}>
                                             <svg className="w-3.5 h-3.5 transition-transform duration-200 group-hover/mstone:scale-[1.8] group-hover/mstone:-translate-y-1" fill={star.color || '#f59e0b'} viewBox="0 0 24 24">
-                                                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                                                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
                                             </svg>
                                             <span className="text-[8px] font-bold text-slate-700 whitespace-nowrap mt-0.5 leading-none transition-all duration-200 group-hover/mstone:scale-[1.8] group-hover/mstone:-translate-y-2 group-hover/mstone:bg-white/90 group-hover/mstone:px-1 group-hover/mstone:rounded group-hover/mstone:shadow-sm">
                                                 {star.label}
@@ -1805,13 +1952,13 @@
                                         </div>
                                     );
                                 })}
-                                
+
                                 {item.milestoneConfig?.type === 'arrow' && (item.milestoneConfig.items || []).map((arrow, idx) => {
                                     if (!arrow.startDate || !arrow.endDate) return null;
                                     const sLeft = getDateCenterX(arrow.startDate);
                                     const eLeft = getDateCenterX(arrow.endDate);
                                     const aWidth = Math.max(0, eLeft - sLeft);
-                                    
+
                                     return (
                                         <div key={`arrow-${idx}`} className={`absolute top-1/2 -translate-y-1/2 z-10 flex flex-col group/mstone ${isEditMode ? 'cursor-pointer' : 'cursor-default'}`} style={{ left: `${sLeft}px` }}>
                                             <div className="flex items-center transition-transform duration-200 group-hover/mstone:scale-105 origin-left" style={{ width: `${aWidth}px` }}>
@@ -1827,7 +1974,7 @@
                             </>
                         ) : (
                             localItem.startDate && localItem.endDate && (
-                                <div 
+                                <div
                                     id={`bar-${item.id}`}
                                     className={`absolute top-1/2 -translate-y-1/2 h-5 rounded-sm shadow-sm border text-[10px] flex items-center ${isDrawingTarget ? 'ring-2 ring-indigo-500 drop-shadow-md animate-pulse' : ''} ${barTheme.bg} ${barTheme.border} ${barTheme.text} ${(dragState.active && dragState.type !== 'progress') ? 'z-20 ring-2 ring-white/50 drop-shadow-md' : 'z-10'}`}
                                     style={{ left: `${renderLeft}px`, width: `${renderWidth}px` }}
@@ -1837,9 +1984,9 @@
                                     }}
                                 >
                                     <div className={`bg-emerald-400 h-full absolute left-0 top-0 rounded-l-[1px] ${localItem.progress === 100 ? 'rounded-r-[1px]' : ''} ${dragState.type === 'progress' ? '' : 'transition-all duration-200'} z-10`} style={{ width: `${localItem.progress || 0}%` }}></div>
-                                    
+
                                     {isEditMode && canEditProgress && (
-                                        <div 
+                                        <div
                                             className="absolute top-0 bottom-0 w-6 cursor-col-resize z-40 flex items-end justify-center group/prog pb-0 translate-y-[8px]"
                                             style={{ left: `calc(${localItem.progress || 0}% - 12px)` }}
                                             onMouseDown={e => handleInteraction(e, 'progress')}
@@ -1852,8 +1999,8 @@
                                     )}
 
                                     {isEditMode && !item.isCalculatingParent && (
-                                        <div 
-                                            className="absolute left-0 top-0 bottom-0 w-4 cursor-ew-resize z-50 flex items-center justify-start group/res-l -translate-x-1" 
+                                        <div
+                                            className="absolute left-0 top-0 bottom-0 w-4 cursor-ew-resize z-50 flex items-center justify-start group/res-l -translate-x-1"
                                             onMouseDown={e => handleInteraction(e, 'resize-left')}
                                             title="Adjust Start Date"
                                         >
@@ -1864,7 +2011,7 @@
                                         </div>
                                     )}
 
-                                    <div 
+                                    <div
                                         className={`absolute inset-0 flex items-center px-2 truncate z-20 ${(!item.isCalculatingParent && isEditMode) ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'} ${isDrawingTarget ? 'cursor-crosshair' : ''}`}
                                         onMouseDown={e => {
                                             if (!isEditMode) return;
@@ -1876,8 +2023,8 @@
                                     </div>
 
                                     {isEditMode && !item.isCalculatingParent && (
-                                        <div 
-                                            className="absolute right-0 top-0 bottom-0 w-4 cursor-ew-resize z-50 flex items-center justify-end group/res-r translate-x-1" 
+                                        <div
+                                            className="absolute right-0 top-0 bottom-0 w-4 cursor-ew-resize z-50 flex items-center justify-end group/res-r translate-x-1"
                                             onMouseDown={e => handleInteraction(e, 'resize-right')}
                                             title="Adjust End Date"
                                         >
@@ -1898,9 +2045,9 @@
         const GanttChart = ({ isEditMode, items, scale, onUpdateField, onAddChild, onDelete, updateDates, previewDates, collapsedIds, toggleCollapse, colWidths, setColWidths, handleAddDependency, handleRemoveDependencies, frozenColumn, setFrozenColumn, picFilter, statusFilter, handleAddNewRoot, customHolidays }) => {
             const chartRef = useRef(null);
             const scrollRef = useRef(null);
-            
+
             const specialDatesMap = new Map((customHolidays || []).map(h => [h.date, { type: h.type || 'holiday', label: h.label }]));
-            
+
             let visibleIds = new Set(items.map(i => i.id));
             const matchesFilter = (value, selectedValues) => selectedValues.includes('All') || selectedValues.includes(value);
 
@@ -1945,12 +2092,12 @@
 
             let minDate = new Date();
             let maxDate = new Date();
-            
+
             if (allDates.length > 0) {
                 minDate = new Date(Math.min(...allDates));
                 maxDate = new Date(Math.max(...allDates));
             }
-            
+
             minDate.setDate(minDate.getDate() - 7);
             maxDate.setDate(maxDate.getDate() + 14);
 
@@ -1997,7 +2144,7 @@
             const buildTree = (parentId, level) => {
                 return items
                     .filter(i => i.parentId === parentId && visibleIds.has(i.id))
-                    .sort((a,b) => a.sortOrder - b.sortOrder)
+                    .sort((a, b) => a.sortOrder - b.sortOrder)
                     .flatMap(item => {
                         const hasChildren = items.some(i => i.parentId === item.id && visibleIds.has(i.id));
                         const hasDependentChildren = items.some(i => i.parentId === item.id && i.type !== 'Milestone');
@@ -2032,17 +2179,17 @@
                     } else {
                         curMonth.width++;
                     }
-                    
+
                     const dStr = formatDate(d);
                     const specialDateInfo = specialDatesMap.get(dStr);
                     const sType = specialDateInfo ? specialDateInfo.type : null;
                     const isVisualHoliday = sType === 'working_day' ? false : (sType === 'holiday' ? true : (d.getDay() === 0 || d.getDay() === 6));
-                    
-                    bottomLabels.push({ 
-                        label: d.getDate(), 
+
+                    bottomLabels.push({
+                        label: d.getDate(),
                         dayName: d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase(),
-                        start: i, 
-                        width: 1, 
+                        start: i,
+                        width: 1,
                         isHoliday: isVisualHoliday,
                         tooltip: specialDateInfo ? specialDateInfo.label : ''
                     });
@@ -2078,10 +2225,10 @@
                     } else {
                         curYear.pixelWidth += monthWidth;
                     }
-                    bottomLabels.push({ 
-                        label: d.toLocaleDateString('en-US', { month: 'short' }), 
-                        left: i * monthWidth, 
-                        pixelWidth: monthWidth 
+                    bottomLabels.push({
+                        label: d.toLocaleDateString('en-US', { month: 'short' }),
+                        left: i * monthWidth,
+                        pixelWidth: monthWidth
                     });
                 }
                 if (curYear) topLabels.push(curYear);
@@ -2114,7 +2261,7 @@
             const frozenColIndex = ALL_COLUMNS.findIndex(c => c.id === frozenColumn);
             const frozenCols = ALL_COLUMNS.slice(0, frozenColIndex + 1);
             const scrollableCols = ALL_COLUMNS.slice(frozenColIndex + 1);
-            
+
             const currentFrozenWidth = frozenCols.reduce((sum, col) => sum + colWidths[col.id], 0);
             const scrollableLeftWidth = totalLeftWidth - currentFrozenWidth;
 
@@ -2123,12 +2270,12 @@
 
             const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0, type: null, targetId: null, sourceId: null });
             const [drawingState, setDrawingState] = useState({ active: false, sourceId: null, currentX: 0, currentY: 0 });
-            
+
             const [addMenu, setAddMenu] = useState({ visible: false, x: 0, y: 0, parentId: null, parentType: null });
             const [milestoneConfigMenu, setMilestoneConfigMenu] = useState({ visible: false, taskId: null });
 
             const drawingRafRef = useRef(null);
-            const lastMousePosRef = useRef({x: 0, y: 0});
+            const lastMousePosRef = useRef({ x: 0, y: 0 });
 
             const isPanningRef = useRef(false);
             const panStartXRef = useRef(0);
@@ -2149,21 +2296,21 @@
                     }
                 };
                 const handleGlobalMouseUp = () => {
-                     setDrawingState(prev => {
-                         if (prev.active) {
-                             if (drawingRafRef.current) cancelAnimationFrame(drawingRafRef.current);
-                             return { active: false, sourceId: null, currentX: 0, currentY: 0 };
-                         }
-                         return prev;
-                     });
+                    setDrawingState(prev => {
+                        if (prev.active) {
+                            if (drawingRafRef.current) cancelAnimationFrame(drawingRafRef.current);
+                            return { active: false, sourceId: null, currentX: 0, currentY: 0 };
+                        }
+                        return prev;
+                    });
 
-                     if (isPanningRef.current) {
-                         isPanningRef.current = false;
-                         if (scrollRef.current) {
-                             scrollRef.current.style.cursor = '';
-                             scrollRef.current.style.userSelect = '';
-                         }
-                     }
+                    if (isPanningRef.current) {
+                        isPanningRef.current = false;
+                        if (scrollRef.current) {
+                            scrollRef.current.style.cursor = '';
+                            scrollRef.current.style.userSelect = '';
+                        }
+                    }
                 };
                 window.addEventListener('click', handleGlobalClick);
                 window.addEventListener('keydown', handleKeyDown);
@@ -2191,7 +2338,7 @@
                 if (!isEditMode) return;
                 setContextMenu({ visible: true, x: e.clientX, y: e.clientY, type: 'line', targetId: targetId, sourceId: sourceId });
             };
-            
+
             const handleOpenAddMenu = (e, parentId, parentType) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -2203,16 +2350,16 @@
                 setDrawingState({ active: true, sourceId, currentX: 0, currentY: 0 });
                 const scrollLoop = () => {
                     const scrollEl = scrollRef.current;
-                    if (scrollEl) { 
+                    if (scrollEl) {
                         const scrollRect = scrollEl.getBoundingClientRect();
                         const edgeThreshold = 80;
                         const maxSpeed = 15;
                         let speed = 0;
                         const { x: clientX, y: clientY } = lastMousePosRef.current;
-                        
+
                         const visibleLeftEdge = scrollRect.left + Math.max(currentFrozenWidth, totalLeftWidth - scrollEl.scrollLeft);
-                        
-                        if (clientX > 0) { 
+
+                        if (clientX > 0) {
                             if (clientX < visibleLeftEdge + edgeThreshold) {
                                 const dist = (visibleLeftEdge + edgeThreshold) - clientX;
                                 speed = -Math.min(maxSpeed, (dist / edgeThreshold) * maxSpeed);
@@ -2221,9 +2368,9 @@
                                 speed = Math.min(maxSpeed, (dist / edgeThreshold) * maxSpeed);
                             }
                             if (speed !== 0) scrollEl.scrollBy({ left: speed });
-                            
+
                             setDrawingState(prev => {
-                                if(!prev.active) return prev;
+                                if (!prev.active) return prev;
                                 return {
                                     ...prev,
                                     currentX: clientX - scrollRect.left + scrollEl.scrollLeft - totalLeftWidth,
@@ -2254,21 +2401,21 @@
                         currentX: e.clientX - rect.left + scrollRef.current.scrollLeft - totalLeftWidth,
                         currentY: e.clientY - rect.top + scrollRef.current.scrollTop - 45
                     }));
-                    return; 
+                    return;
                 }
 
                 if (isPanningRef.current && scrollRef.current) {
                     const x = e.clientX - scrollRef.current.getBoundingClientRect().left;
-                    const walk = (x - panStartXRef.current); 
+                    const walk = (x - panStartXRef.current);
                     scrollRef.current.scrollLeft = panScrollLeftRef.current - walk;
                 }
             };
 
             const handleChartMouseDown = (e) => {
-                if (e.button !== 0) return; 
+                if (e.button !== 0) return;
 
                 const target = e.target;
-                
+
                 if (target.closest('.cursor-col-resize')) {
                     return;
                 }
@@ -2278,11 +2425,11 @@
                         target.tagName === 'INPUT' ||
                         target.tagName === 'BUTTON' ||
                         target.tagName === 'SELECT' ||
-                        target.closest('[id^="bar-"]') || 
-                        target.closest('.cursor-ew-resize') || 
-                        target.closest('.group\\/mstone') || 
-                        target.closest('path') || 
-                        target.closest('.context-menu-popup') 
+                        target.closest('[id^="bar-"]') ||
+                        target.closest('.cursor-ew-resize') ||
+                        target.closest('.group\\/mstone') ||
+                        target.closest('path') ||
+                        target.closest('.context-menu-popup')
                     ) {
                         return;
                     }
@@ -2291,7 +2438,7 @@
                 isPanningRef.current = true;
                 panStartXRef.current = e.clientX - scrollRef.current.getBoundingClientRect().left;
                 panScrollLeftRef.current = scrollRef.current.scrollLeft;
-                
+
                 scrollRef.current.style.cursor = 'grabbing';
                 scrollRef.current.style.userSelect = 'none';
             };
@@ -2302,11 +2449,11 @@
 
                 const item = displayItems[index];
                 if (!item.startDate || !item.endDate) return null;
-                
+
                 const left = getDateX(item.startDate);
                 const width = getRangeWidth(item.startDate, item.endDate);
-                
-                const y = (index * 28) + 14; 
+
+                const y = (index * 28) + 14;
                 const x = position === 'right' ? left + width : left;
 
                 return { x, y };
@@ -2321,7 +2468,7 @@
                     return `M ${x1} ${y1} L ${x1 + buffer} ${y1} L ${x1 + buffer} ${midY} L ${x2 - buffer} ${midY} L ${x2 - buffer} ${y2} L ${x2} ${y2}`;
                 }
             };
-            
+
             const renderHeaderCell = (col) => (
                 <div key={`header-${col.id}`} style={{ width: `${colWidths[col.id]}px` }} className={`relative shrink-0 flex items-center group/col ${col.center ? 'justify-center' : 'px-1'}`}>
                     {isEditMode && col.id === 'taskName' && (
@@ -2330,8 +2477,8 @@
                         </button>
                     )}
                     <div className={`flex items-center gap-1 overflow-hidden w-full relative ${col.id === 'taskName' ? 'pt-5' : ''}`}>
-                        <button 
-                            onClick={(e) => { e.stopPropagation(); setFrozenColumn(col.id); }} 
+                        <button
+                            onClick={(e) => { e.stopPropagation(); setFrozenColumn(col.id); }}
                             className={`flex-none hover:text-blue-600 transition-colors ${frozenColumn === col.id ? 'text-blue-500 opacity-100' : 'text-slate-300 opacity-0 group-hover/col:opacity-100'}`}
                             title="Pin to freeze panel here"
                         >
@@ -2345,14 +2492,14 @@
 
             return (
                 <div className="flex flex-col h-full bg-white overflow-hidden" ref={chartRef}>
-                    <div 
-                        className="flex-1 overflow-auto flex relative" 
-                        ref={scrollRef} 
+                    <div
+                        className="flex-1 overflow-auto flex relative"
+                        ref={scrollRef}
                         onMouseMove={handleChartMouseMove}
                         onMouseDown={handleChartMouseDown}
                     >
                         <div className="min-w-max flex flex-col relative pb-32">
-                            
+
                             <div className="flex border-b border-slate-200 bg-slate-50 sticky top-0 shadow-sm" style={{ zIndex: 60, height: '45px' }}>
                                 <div className="flex-none bg-slate-50 border-r border-slate-200 sticky left-0 flex items-end pb-2 isolate shadow-[4px_0_12px_rgba(0,0,0,0.03)]" style={{ width: `${currentFrozenWidth}px`, zIndex: 65 }}>
                                     <div className="flex w-full text-[11px] font-bold text-slate-500 uppercase tracking-wider items-center">
@@ -2365,7 +2512,7 @@
                                         {scrollableCols.map(col => renderHeaderCell(col))}
                                     </div>
                                 </div>
-                                
+
                                 <div className="flex-1 relative bg-slate-50" style={{ width: `${timelineWidth}px`, minWidth: '100%', zIndex: 61 }}>
                                     <div className="absolute top-0 left-0 w-full h-[20px] border-b border-slate-200 bg-slate-50">
                                         {topLabels.map((lbl, i) => (
@@ -2376,9 +2523,9 @@
                                     </div>
                                     <div className="absolute top-[20px] left-0 w-full h-[25px] border-b border-slate-200 bg-slate-50">
                                         {bottomLabels.map((lbl, i) => (
-                                            <div 
-                                                key={`bot-${i}`} 
-                                                className={`group absolute h-full flex flex-col items-center justify-center border-r border-slate-200 hover:z-50 ${lbl.isHoliday && scale === 'day' ? 'bg-slate-200/50 text-slate-500' : 'text-slate-600'} ${lbl.tooltip ? 'cursor-help' : ''}`} 
+                                            <div
+                                                key={`bot-${i}`}
+                                                className={`group absolute h-full flex flex-col items-center justify-center border-r border-slate-200 hover:z-50 ${lbl.isHoliday && scale === 'day' ? 'bg-slate-200/50 text-slate-500' : 'text-slate-600'} ${lbl.tooltip ? 'cursor-help' : ''}`}
                                                 style={getLabelStyle(lbl)}
                                             >
                                                 {lbl.dayName ? (
@@ -2411,9 +2558,9 @@
                                             <polygon points="0 0, 6 2, 0 4" fill="#cbd5e1" />
                                         </marker>
                                     </defs>
-                                    
+
                                     {displayItems.map(item => {
-                                        if (item.type === 'Milestone') return null; 
+                                        if (item.type === 'Milestone') return null;
                                         if (item.isPinned) return null;
                                         if (!item.predecessors || item.predecessors.length === 0) return null;
                                         return item.predecessors.map(predId => {
@@ -2423,20 +2570,20 @@
                                             const p2 = getTaskCoords(item.id, 'left');
                                             if (!p1 || !p2) return null;
                                             return (
-                                                <g 
-                                                    key={`${predId}-${item.id}`} 
+                                                <g
+                                                    key={`${predId}-${item.id}`}
                                                     className={`group ${isEditMode ? 'cursor-pointer' : 'cursor-default'}`}
                                                     onContextMenu={(e) => isEditMode && handleLineContextMenu(e, predId, item.id)}
                                                 >
-                                                    <path 
-                                                        d={createPath(p1.x, p1.y, p2.x, p2.y)} 
-                                                        stroke="transparent" 
-                                                        strokeWidth="10" 
-                                                        fill="none" 
+                                                    <path
+                                                        d={createPath(p1.x, p1.y, p2.x, p2.y)}
+                                                        stroke="transparent"
+                                                        strokeWidth="10"
+                                                        fill="none"
                                                         className="pointer-events-auto"
                                                     />
-                                                    <path 
-                                                        d={createPath(p1.x, p1.y, p2.x, p2.y)} 
+                                                    <path
+                                                        d={createPath(p1.x, p1.y, p2.x, p2.y)}
                                                         className="dependency-line solid pointer-events-none group-hover:stroke-rose-500 transition-colors"
                                                         markerEnd="url(#arrowhead-solid)"
                                                     />
@@ -2450,8 +2597,8 @@
                                             const p1 = getTaskCoords(drawingState.sourceId, 'right');
                                             if (!p1) return null;
                                             return (
-                                                <path 
-                                                    d={createPath(p1.x, p1.y, drawingState.currentX, drawingState.currentY)} 
+                                                <path
+                                                    d={createPath(p1.x, p1.y, drawingState.currentX, drawingState.currentY)}
                                                     className="dependency-line"
                                                     markerEnd="url(#arrowhead)"
                                                 />
@@ -2461,8 +2608,8 @@
                                 </svg>
 
                                 {todayLeft > 0 && todayLeft < timelineWidth && (
-                                    <div 
-                                        className="absolute top-0 bottom-0 border-l-2 border-red-400 border-dashed z-30 pointer-events-none" 
+                                    <div
+                                        className="absolute top-0 bottom-0 border-l-2 border-red-400 border-dashed z-30 pointer-events-none"
                                         style={{ left: `${totalLeftWidth + todayLeft}px` }}
                                     >
                                         <div className="bg-red-500 text-white text-[9px] px-1 rounded-b absolute top-0 -translate-x-1/2 shadow">TODAY</div>
@@ -2470,18 +2617,18 @@
                                 )}
 
                                 <div className="absolute top-0 bottom-0 pointer-events-none z-0" style={{ left: `${totalLeftWidth}px`, width: `${timelineWidth}px` }}>
-                                   {bottomLabels.map((lbl, i) => (
-                                       <div key={`grid-${i}`} className={`absolute top-0 bottom-0 border-r ${lbl.isHoliday && scale === 'day' ? 'bg-slate-200/50 border-slate-200' : 'border-slate-50'}`} style={getLabelStyle(lbl)}></div>
-                                   ))}
+                                    {bottomLabels.map((lbl, i) => (
+                                        <div key={`grid-${i}`} className={`absolute top-0 bottom-0 border-r ${lbl.isHoliday && scale === 'day' ? 'bg-slate-200/50 border-slate-200' : 'border-slate-50'}`} style={getLabelStyle(lbl)}></div>
+                                    ))}
                                 </div>
 
                                 {displayItems.map((item) => (
-                                    <GanttRow 
+                                    <GanttRow
                                         isEditMode={isEditMode}
-                                        key={item.id} 
-                                        item={item} 
-                                        level={item.level} 
-                                        minDate={minDate} 
+                                        key={item.id}
+                                        item={item}
+                                        level={item.level}
+                                        minDate={minDate}
                                         dayWidth={dragDayWidth}
                                         getDateX={getDateX}
                                         getDateCenterX={getDateCenterX}
@@ -2512,7 +2659,7 @@
                     </div>
 
                     {contextMenu.visible && (
-                        <div 
+                        <div
                             className="context-menu-popup fixed bg-white border border-slate-200 shadow-xl rounded-lg py-1 z-[9999] min-w-[160px] text-sm"
                             style={{ top: contextMenu.y, left: contextMenu.x }}
                         >
@@ -2527,9 +2674,9 @@
                                                         Update Progress
                                                     </div>
                                                     <div className="px-4 py-2">
-                                                        <input 
-                                                            type="number" 
-                                                            min="0" max="100" 
+                                                        <input
+                                                            type="number"
+                                                            min="0" max="100"
                                                             className="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                             placeholder="%"
                                                             defaultValue={Math.round(targetTask.progress || 0)}
@@ -2553,7 +2700,7 @@
                                     <div className="px-3 py-2 text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 mb-1">
                                         Dependency
                                     </div>
-                                    <button 
+                                    <button
                                         className="w-full text-left px-4 py-2 hover:bg-blue-50 hover:text-blue-600 transition-colors flex items-center gap-2"
                                         onClick={() => {
                                             startDrawing(contextMenu.targetId);
@@ -2563,13 +2710,13 @@
                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
                                         Add Dependency
                                     </button>
-                                    
+
                                     {(() => {
                                         const tTask = displayItems.find(i => i.id === contextMenu.targetId);
                                         const hasIncoming = tTask?.predecessors?.length > 0;
                                         const hasOutgoing = displayItems.some(i => (i.predecessors || []).includes(contextMenu.targetId));
                                         return (hasIncoming || hasOutgoing) ? (
-                                            <button 
+                                            <button
                                                 className="w-full text-left px-4 py-2 hover:bg-rose-50 hover:text-rose-600 transition-colors flex items-center gap-2"
                                                 onClick={() => {
                                                     handleRemoveDependencies(contextMenu.targetId);
@@ -2587,7 +2734,7 @@
                                     <div className="px-3 py-2 text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 mb-1">
                                         Connection
                                     </div>
-                                    <button 
+                                    <button
                                         className="w-full text-left px-4 py-2 hover:bg-rose-50 hover:text-rose-600 transition-colors flex items-center gap-2"
                                         onClick={() => {
                                             handleRemoveDependencies(contextMenu.targetId, contextMenu.sourceId);
@@ -2605,7 +2752,7 @@
                                         <>
                                             {tsk.type === 'Project' && (
                                                 <>
-                                                    <button 
+                                                    <button
                                                         className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors flex items-center gap-2 text-slate-700"
                                                         onClick={() => {
                                                             onAddChild(tsk.id, 'Job', 'child');
@@ -2614,7 +2761,7 @@
                                                     >
                                                         <Icons.Job /> Add Job
                                                     </button>
-                                                    <button 
+                                                    <button
                                                         className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors flex items-center gap-2 text-slate-700"
                                                         onClick={() => {
                                                             onAddChild(tsk.id, 'Milestone', 'child');
@@ -2627,7 +2774,7 @@
                                             )}
                                             {tsk.type === 'Job' && (
                                                 <>
-                                                    <button 
+                                                    <button
                                                         className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors flex items-center gap-2 text-slate-700"
                                                         onClick={() => {
                                                             onAddChild(tsk.id, 'Job', 'sibling');
@@ -2636,7 +2783,7 @@
                                                     >
                                                         <Icons.Job /> Add New Job
                                                     </button>
-                                                    <button 
+                                                    <button
                                                         className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors flex items-center gap-2 text-slate-700"
                                                         onClick={() => {
                                                             onAddChild(tsk.id, 'Task', 'child');
@@ -2649,7 +2796,7 @@
                                             )}
                                             {tsk.type === 'Task' && (
                                                 <>
-                                                    <button 
+                                                    <button
                                                         className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors flex items-center gap-2 text-slate-700"
                                                         onClick={() => {
                                                             onAddChild(tsk.id, 'Task', 'sibling');
@@ -2658,7 +2805,7 @@
                                                     >
                                                         <Icons.Task /> Add New Task
                                                     </button>
-                                                    <button 
+                                                    <button
                                                         className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors flex items-center gap-2 text-slate-700"
                                                         onClick={() => {
                                                             onAddChild(tsk.id, 'Sub-task', 'child');
@@ -2671,7 +2818,7 @@
                                             )}
                                             {tsk.type === 'Sub-task' && (
                                                 <>
-                                                    <button 
+                                                    <button
                                                         className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors flex items-center gap-2 text-slate-700"
                                                         onClick={() => {
                                                             onAddChild(tsk.id, 'Sub-task', 'sibling');
@@ -2680,7 +2827,7 @@
                                                     >
                                                         {Icons['Sub-task']()} Add New Sub-task
                                                     </button>
-                                                    <button 
+                                                    <button
                                                         className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors flex items-center gap-2 text-slate-700"
                                                         onClick={() => {
                                                             onAddChild(tsk.id, 'Sub-task', 'child');
@@ -2692,7 +2839,7 @@
                                                 </>
                                             )}
                                             <div className="h-px bg-slate-100 my-1"></div>
-                                            <button 
+                                            <button
                                                 className="w-full text-left px-4 py-2 hover:bg-rose-50 hover:text-rose-600 transition-colors flex items-center gap-2"
                                                 onClick={() => {
                                                     onDelete(contextMenu.targetId);
@@ -2707,9 +2854,9 @@
                             ) : null}
                         </div>
                     )}
-                    
+
                     {addMenu.visible && (
-                        <div 
+                        <div
                             className="context-menu-popup fixed bg-white border border-slate-200 shadow-xl rounded-lg py-1 z-[9999] min-w-[160px] text-sm"
                             style={{ top: addMenu.y, left: addMenu.x }}
                         >
@@ -2718,43 +2865,43 @@
                             </div>
                             {addMenu.parentType === 'Project' && (
                                 <>
-                                    <button className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors flex items-center gap-2" onClick={() => { onAddChild(addMenu.parentId, 'Job', 'child'); setAddMenu({...addMenu, visible: false}); }}><Icons.Job /> Add Job</button>
-                                    <button className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors flex items-center gap-2" onClick={() => { onAddChild(addMenu.parentId, 'Milestone', 'child'); setAddMenu({...addMenu, visible: false}); }}><Icons.Milestone /> Add Milestone</button>
+                                    <button className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors flex items-center gap-2" onClick={() => { onAddChild(addMenu.parentId, 'Job', 'child'); setAddMenu({ ...addMenu, visible: false }); }}><Icons.Job /> Add Job</button>
+                                    <button className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors flex items-center gap-2" onClick={() => { onAddChild(addMenu.parentId, 'Milestone', 'child'); setAddMenu({ ...addMenu, visible: false }); }}><Icons.Milestone /> Add Milestone</button>
                                 </>
                             )}
                             {addMenu.parentType === 'Job' && (
                                 <>
-                                    <button className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors flex items-center gap-2" onClick={() => { onAddChild(addMenu.parentId, 'Job', 'sibling'); setAddMenu({...addMenu, visible: false}); }}><Icons.Job /> Add New Job</button>
-                                    <button className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors flex items-center gap-2" onClick={() => { onAddChild(addMenu.parentId, 'Task', 'child'); setAddMenu({...addMenu, visible: false}); }}><Icons.Task /> Add Task</button>
+                                    <button className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors flex items-center gap-2" onClick={() => { onAddChild(addMenu.parentId, 'Job', 'sibling'); setAddMenu({ ...addMenu, visible: false }); }}><Icons.Job /> Add New Job</button>
+                                    <button className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors flex items-center gap-2" onClick={() => { onAddChild(addMenu.parentId, 'Task', 'child'); setAddMenu({ ...addMenu, visible: false }); }}><Icons.Task /> Add Task</button>
                                 </>
                             )}
                             {addMenu.parentType === 'Task' && (
                                 <>
-                                    <button className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors flex items-center gap-2" onClick={() => { onAddChild(addMenu.parentId, 'Task', 'sibling'); setAddMenu({...addMenu, visible: false}); }}><Icons.Task /> Add New Task</button>
-                                    <button className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors flex items-center gap-2" onClick={() => { onAddChild(addMenu.parentId, 'Sub-task', 'child'); setAddMenu({...addMenu, visible: false}); }}>{Icons['Sub-task']()} Add Sub-task</button>
+                                    <button className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors flex items-center gap-2" onClick={() => { onAddChild(addMenu.parentId, 'Task', 'sibling'); setAddMenu({ ...addMenu, visible: false }); }}><Icons.Task /> Add New Task</button>
+                                    <button className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors flex items-center gap-2" onClick={() => { onAddChild(addMenu.parentId, 'Sub-task', 'child'); setAddMenu({ ...addMenu, visible: false }); }}>{Icons['Sub-task']()} Add Sub-task</button>
                                 </>
                             )}
                             {addMenu.parentType === 'Sub-task' && (
                                 <>
-                                    <button className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors flex items-center gap-2" onClick={() => { onAddChild(addMenu.parentId, 'Sub-task', 'sibling'); setAddMenu({...addMenu, visible: false}); }}>{Icons['Sub-task']()} Add New Sub-task</button>
-                                    <button className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors flex items-center gap-2" onClick={() => { onAddChild(addMenu.parentId, 'Sub-task', 'child'); setAddMenu({...addMenu, visible: false}); }}>{Icons['Sub-task']()} Add Sub-task</button>
+                                    <button className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors flex items-center gap-2" onClick={() => { onAddChild(addMenu.parentId, 'Sub-task', 'sibling'); setAddMenu({ ...addMenu, visible: false }); }}>{Icons['Sub-task']()} Add New Sub-task</button>
+                                    <button className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors flex items-center gap-2" onClick={() => { onAddChild(addMenu.parentId, 'Sub-task', 'child'); setAddMenu({ ...addMenu, visible: false }); }}>{Icons['Sub-task']()} Add Sub-task</button>
                                 </>
                             )}
                         </div>
                     )}
-                    
+
                     {milestoneConfigMenu.visible && (() => {
                         const mTask = items.find(i => i.id === milestoneConfigMenu.taskId);
                         if (!mTask) return null;
                         const config = mTask.milestoneConfig || { type: 'star', items: [] };
                         const safeItems = config.items || [];
-                        
+
                         return (
                             <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
                                 <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-[500px] flex flex-col max-h-[80vh] overflow-hidden">
                                     <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                                         <h3 className="font-bold text-slate-800 flex items-center gap-2"><Icons.Milestone /> Configure Milestone: {mTask.taskName}</h3>
-                                        <button onClick={() => setMilestoneConfigMenu({visible: false, taskId: null})} className="text-slate-400 hover:text-slate-600"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+                                        <button onClick={() => setMilestoneConfigMenu({ visible: false, taskId: null })} className="text-slate-400 hover:text-slate-600"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
                                     </div>
                                     <div className="p-5 flex-1 overflow-y-auto">
                                         <div className="mb-5 flex gap-4">
@@ -2771,7 +2918,7 @@
                                                 <span className="font-medium text-sm">Right Arrow Line</span>
                                             </label>
                                         </div>
-                                        
+
                                         <table className="w-full text-sm text-left">
                                             <thead className="text-xs text-slate-500 bg-slate-50 uppercase">
                                                 <tr>
@@ -2791,7 +2938,7 @@
                                                             const newItems = [...safeItems]; newItems[idx].label = e.target.value;
                                                             onUpdateField(mTask.id, 'milestoneConfig', { ...config, items: newItems });
                                                         }} className="w-full border border-slate-200 rounded px-2 py-1 text-xs" /></td>
-                                                        
+
                                                         {config.type === 'star' ? (
                                                             <td className="p-1"><input type="date" value={mItem.date ? mItem.date.replace(/\./g, '-') : ''} onChange={e => {
                                                                 const newItems = [...safeItems]; newItems[idx].date = e.target.value.replace(/-/g, '.');
@@ -2809,7 +2956,7 @@
                                                                 }} className="w-full border border-slate-200 rounded px-2 py-1 text-xs" /></td>
                                                             </>
                                                         )}
-                                                        
+
                                                         <td className="p-1"><input type="color" value={mItem.color || '#f59e0b'} onChange={e => {
                                                             const newItems = [...safeItems]; newItems[idx].color = e.target.value;
                                                             onUpdateField(mTask.id, 'milestoneConfig', { ...config, items: newItems });
@@ -2832,7 +2979,7 @@
                                         </button>
                                     </div>
                                     <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
-                                        <button onClick={() => setMilestoneConfigMenu({visible: false, taskId: null})} className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg shadow-sm hover:bg-blue-700">Done</button>
+                                        <button onClick={() => setMilestoneConfigMenu({ visible: false, taskId: null })} className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg shadow-sm hover:bg-blue-700">Done</button>
                                     </div>
                                 </div>
                             </div>
@@ -2846,11 +2993,11 @@
             const result = [];
             let current = '';
             let inQuotes = false;
-            
+
             for (let i = 0; i < line.length; i++) {
                 const char = line[i];
                 const nextChar = line[i + 1];
-                
+
                 if (char === '"') {
                     if (inQuotes && nextChar === '"') {
                         current += '"';
@@ -2873,7 +3020,7 @@
 
         const exportToCSV = (items) => {
             let csvContent = "data:text/csv;charset=utf-8," + CSV_HEADER + "\n";
-            items.sort((a,b) => a.sortOrder - b.sortOrder).forEach(item => {
+            items.sort((a, b) => a.sortOrder - b.sortOrder).forEach(item => {
                 const preds = (item.predecessors || []).join(';');
                 const progressUpdates = JSON.stringify(item.progressUpdates || []).replace(/"/g, '""');
                 const row = [
@@ -2908,7 +3055,7 @@
             const buildExportTree = (parentId, level) => {
                 return items
                     .filter(i => i.parentId === parentId)
-                    .sort((a,b) => a.sortOrder - b.sortOrder)
+                    .sort((a, b) => a.sortOrder - b.sortOrder)
                     .flatMap(item => {
                         const node = { ...item, level };
                         return [node, ...buildExportTree(item.id, level + 1)];
@@ -2936,8 +3083,8 @@
                 minDate = new Date(Math.min(...allDates));
                 maxDate = new Date(Math.max(...allDates));
             }
-            minDate.setDate(minDate.getDate() - 3); 
-            maxDate.setDate(maxDate.getDate() + 7); 
+            minDate.setDate(minDate.getDate() - 3);
+            maxDate.setDate(maxDate.getDate() + 7);
 
             const totalDays = diffDays(formatDate(minDate), formatDate(maxDate));
             const datesArray = [];
@@ -2951,14 +3098,14 @@
 
             const workbook = new ExcelJS.Workbook();
             const worksheet = workbook.addWorksheet('Project Schedule');
-            
+
             worksheet.views = [
-                { 
+                {
                     showGridLines: true,
                     state: 'frozen',
-                    xSplit: 8, 
-                    ySplit: 2, 
-                    activeCell: 'I3' 
+                    xSplit: 8,
+                    ySplit: 2,
+                    activeCell: 'I3'
                 }
             ];
 
@@ -2975,7 +3122,7 @@
             ];
 
             const dateCols = datesArray.map(d => ({
-                header: `${d.getDate()}\n${d.toLocaleDateString('en-US', {month:'short'})}`,
+                header: `${d.getDate()}\n${d.toLocaleDateString('en-US', { month: 'short' })}`,
                 key: `date_${d.getTime()}`,
                 width: 4
             }));
@@ -3009,7 +3156,7 @@
                     if (specialDateInfo?.label) {
                         cell.note = specialDateInfo.label;
                     }
-                    
+
                     let isWeekend = false;
                     if (exceptionType === 'working_day' || exceptionType === 'workday') {
                         isWeekend = false;
@@ -3024,7 +3171,7 @@
                     if (isToday) {
                         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEF4444' } };
                     } else if (isWeekend) {
-                        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } }; 
+                        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
                     }
                 }
             });
@@ -3043,7 +3190,7 @@
             };
 
             exportItems.forEach((item, rowIndex) => {
-                const rowNumber = rowIndex + 3; 
+                const rowNumber = rowIndex + 3;
                 const row = worksheet.getRow(rowNumber);
                 row.height = 20;
 
@@ -3061,8 +3208,8 @@
                 row.getCell(7).value = formatExcelDate(item.endDate);
                 row.getCell(8).value = item.type === 'Job' ? (item.priority || '') : '';
                 row.getCell(9).value = item.remark;
-                
-                for(let i=1; i<=9; i++) {
+
+                for (let i = 1; i <= 9; i++) {
                     const cell = row.getCell(i);
                     cell.font = (i === 9) ? { ...fontStyle, bold: false } : fontStyle;
                     cell.alignment = { vertical: 'middle' };
@@ -3097,8 +3244,8 @@
 
                 const startD = item.startDate ? parseDate(item.startDate) : null;
                 const endD = item.endDate ? parseDate(item.endDate) : null;
-                if (startD) startD.setHours(0,0,0,0);
-                if (endD) endD.setHours(0,0,0,0);
+                if (startD) startD.setHours(0, 0, 0, 0);
+                if (endD) endD.setHours(0, 0, 0, 0);
 
                 const getBaseStatusColor = (status) => {
                     if (status === 'Complete') return 'FFD1FAE5';
@@ -3116,19 +3263,19 @@
 
                 for (let i = 0; i < datesArray.length; i++) {
                     const d = datesArray[i];
-                    d.setHours(0,0,0,0);
+                    d.setHours(0, 0, 0, 0);
                     const dStr = formatDate(d);
                     const colNumber = i + 10;
                     const cell = row.getCell(colNumber);
 
-                    let cellColor = null; 
+                    let cellColor = null;
                     let cellText = null;
                     let fontColor = 'FF333333';
 
                     let isMilestoneCell = false;
                     if (item.type === 'Milestone') {
                         const config = item.milestoneConfig || { items: [] };
-                        
+
                         if (config.type === 'star') {
                             const mItem = config.items.find(mi => mi.date && formatDate(parseDate(mi.date)) === dStr);
                             if (mItem) {
@@ -3149,8 +3296,8 @@
                                     if (!mi.startDate || !mi.endDate) return false;
                                     const sDate = parseDate(mi.startDate);
                                     const eDate = parseDate(mi.endDate);
-                                    sDate.setHours(0,0,0,0);
-                                    eDate.setHours(0,0,0,0);
+                                    sDate.setHours(0, 0, 0, 0);
+                                    eDate.setHours(0, 0, 0, 0);
                                     return d > sDate && d <= eDate;
                                 });
                                 if (mItem) {
@@ -3166,7 +3313,7 @@
                         const isDonePortion = currentDayIndex < progressDays;
 
                         if (isDonePortion) {
-                            cellColor = 'FF34D399'; 
+                            cellColor = 'FF34D399';
                             fontColor = 'FF064E3B';
                         } else {
                             cellColor = baseStatusColor;
@@ -3182,7 +3329,7 @@
                     if (cellColor) {
                         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cellColor } };
                     }
-                    
+
                     if (cellText) {
                         cell.value = cellText;
                         cell.font = { name: 'Segoe UI', size: 8, color: { argb: fontColor }, bold: true };
@@ -3199,16 +3346,16 @@
                 const ctx = canvas.getContext('2d');
                 ctx.fillStyle = '#ef4444';
                 ctx.fillRect(0, 0, 10, 10);
-                
+
                 const imageId = workbook.addImage({
                     base64: canvas.toDataURL('image/png'),
                     extension: 'png',
                 });
 
                 worksheet.addImage(imageId, {
-                    tl: { col: todayCol - 1, row: 1 }, 
-                    br: { col: todayCol - 1 + 0.1, row: exportItems.length + 2 }, 
-                    editAs: 'twoCell' 
+                    tl: { col: todayCol - 1, row: 1 },
+                    br: { col: todayCol - 1 + 0.1, row: exportItems.length + 2 },
+                    editAs: 'twoCell'
                 });
             }
 
@@ -3235,7 +3382,7 @@
             const [selectedProjects, setSelectedProjects] = useState(['All']);
             const [isProjectFilterOpen, setIsProjectFilterOpen] = useState(false);
             const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
-            
+
             const [customHolidays, setCustomHolidays] = useState([]);
             const [isHolidayModalOpen, setIsHolidayModalOpen] = useState(false);
             const [newHoliday, setNewHoliday] = useState({ date: getTodayStr(), label: '', type: 'holiday' });
@@ -3248,7 +3395,7 @@
                 return ['Not Started', 'In Progress', 'Delay', 'Complete'].filter(st => activeStatuses.has(st));
             }, [items]);
             const hasActiveFilters = !selectedProjects.includes('All') || !picFilter.includes('All') || !statusFilter.includes('All');
-            const activeFilterCount = 
+            const activeFilterCount =
                 (selectedProjects.includes('All') ? 0 : selectedProjects.length) +
                 (picFilter.includes('All') ? 0 : picFilter.length) +
                 (statusFilter.includes('All') ? 0 : statusFilter.length);
@@ -3350,7 +3497,7 @@
                     setDbError(error.message);
                     setIsLoaded(true);
                 });
-                
+
                 const holidayRef = db.ref('projects/main/holidays');
                 const unsubHoliday = holidayRef.on('value', snap => {
                     if (snap.exists()) setCustomHolidays(Object.values(snap.val()));
@@ -3370,7 +3517,7 @@
                 if (saveHistory) {
                     const stateToSave = dragStartStateRef.current || items;
                     setHistory(prev => [...prev.slice(-10), stateToSave]);
-                    dragStartStateRef.current = null; 
+                    dragStartStateRef.current = null;
                 }
                 setItems(finalItems);
                 db.ref('projects/main/items').set(finalItems);
@@ -3420,12 +3567,12 @@
             const handleAddChild = (targetId, newType, relation = 'child') => {
                 const target = items.find(i => i.id === targetId);
                 let parentId = relation === 'child' ? target.id : target.parentId;
-                
+
                 let newSortOrder;
                 if (newType === 'Milestone' && target.type === 'Project' && relation === 'child') {
-                    const projectChildren = items.filter(i => i.parentId === target.id).sort((a,b) => a.sortOrder - b.sortOrder);
+                    const projectChildren = items.filter(i => i.parentId === target.id).sort((a, b) => a.sortOrder - b.sortOrder);
                     const projectMilestones = projectChildren.filter(i => i.type === 'Milestone');
-                    
+
                     if (projectMilestones.length > 0) {
                         newSortOrder = projectMilestones[projectMilestones.length - 1].sortOrder + 0.001;
                     } else if (projectChildren.length > 0) {
@@ -3440,14 +3587,14 @@
                 }
 
                 const newItem = {
-                    id: generateId(), parentId, type: newType, taskName: `New ${newType}`, 
-                    pic: target.pic || '', startDate: target.startDate || getTodayStr(), endDate: target.endDate || addDays(getTodayStr(), 2), 
+                    id: generateId(), parentId, type: newType, taskName: `New ${newType}`,
+                    pic: target.pic || '', startDate: target.startDate || getTodayStr(), endDate: target.endDate || addDays(getTodayStr(), 2),
                     progress: 0, status: 'Not Started', remark: '', sortOrder: newSortOrder, predecessors: [],
                     milestoneConfig: { type: 'star', items: [] }
                 };
-                
-                let updatedItems = [...items, newItem].map(i => ({...i}));
-                updatedItems.sort((a,b) => a.sortOrder - b.sortOrder).forEach((item, index) => {
+
+                let updatedItems = [...items, newItem].map(i => ({ ...i }));
+                updatedItems.sort((a, b) => a.sortOrder - b.sortOrder).forEach((item, index) => {
                     item.sortOrder = index + 1;
                 });
 
@@ -3460,8 +3607,8 @@
                     e.stopPropagation();
                 }
                 const newItem = {
-                    id: generateId(), parentId: null, type: 'Project', taskName: 'New Project', 
-                    pic: '', startDate: getTodayStr(), endDate: addDays(getTodayStr(), 7), 
+                    id: generateId(), parentId: null, type: 'Project', taskName: 'New Project',
+                    pic: '', startDate: getTodayStr(), endDate: addDays(getTodayStr(), 7),
                     progress: 0, status: 'Not Started', remark: '', sortOrder: items.length + 1, predecessors: [],
                     milestoneConfig: { type: 'star', items: [] }
                 };
@@ -3507,7 +3654,7 @@
                 }
                 setSelectedValues(newSelected);
             };
-            
+
             const handleSaveHoliday = () => {
                 if (!newHoliday.label.trim()) return;
                 const newHolidays = [...customHolidays, { id: generateId(), date: newHoliday.date, label: newHoliday.label, type: newHoliday.type || 'holiday' }];
@@ -3534,7 +3681,7 @@
                     for (let i = 1; i < lines.length; i++) {
                         if (!lines[i].trim()) continue;
                         const row = parseCSVLine(lines[i]);
-                        
+
                         let priorityVal = '';
                         let remarkIdx = 9;
                         let sortOrderIdx = 10;
@@ -3551,7 +3698,7 @@
                             progressUpdatesIdx = 13;
                         }
 
-                        if(row.length >= 11) {
+                        if (row.length >= 11) {
                             const predsRaw = row[predsIdx] ? row[predsIdx].replace(/^"|"$/g, '') : "";
                             const predecessors = predsRaw ? predsRaw.split(';') : [];
                             let progressUpdates = [];
@@ -3566,14 +3713,14 @@
                             parsed.push({
                                 id: row[0], parentId: row[1] || null, type: row[2], taskName: row[3].replace(/^"|"$/g, ''),
                                 pic: row[4].replace(/^"|"$/g, ''), status: row[5], progress: Number(row[6]),
-                                startDate: row[7], endDate: row[8], priority: priorityVal, remark: row[remarkIdx].replace(/^"|"$/g, ''), 
+                                startDate: row[7], endDate: row[8], priority: priorityVal, remark: row[remarkIdx].replace(/^"|"$/g, ''),
                                 sortOrder: Number(row[sortOrderIdx]), predecessors, progressUpdates,
                                 milestoneConfig: { type: 'star', items: [] }
                             });
                         }
                     }
                     updateState(parsed, null, true);
-                    e.target.value = null; 
+                    e.target.value = null;
                 };
                 reader.readAsText(file);
             };
@@ -3595,7 +3742,7 @@
                                         <p className="text-slate-500 text-sm text-center py-4 italic">No custom dates added yet.</p>
                                     ) : (
                                         <ul className="space-y-2 mb-6">
-                                            {customHolidays.sort((a,b) => parseDate(a.date) - parseDate(b.date)).map(h => (
+                                            {customHolidays.sort((a, b) => parseDate(a.date) - parseDate(b.date)).map(h => (
                                                 <li key={h.id} className="flex justify-between items-center bg-slate-50 p-2 rounded border border-slate-200">
                                                     <div>
                                                         <div className="font-semibold text-sm text-slate-700 flex items-center gap-1.5">
@@ -3620,22 +3767,22 @@
                                                     <label className="block text-xs font-medium text-slate-600 mb-1.5">Date Type</label>
                                                     <div className="flex gap-4">
                                                         <label className="flex items-center gap-1.5 cursor-pointer">
-                                                            <input type="radio" name="hType" checked={(!newHoliday.type || newHoliday.type === 'holiday')} onChange={() => setNewHoliday({...newHoliday, type: 'holiday'})} className="accent-rose-500" />
+                                                            <input type="radio" name="hType" checked={(!newHoliday.type || newHoliday.type === 'holiday')} onChange={() => setNewHoliday({ ...newHoliday, type: 'holiday' })} className="accent-rose-500" />
                                                             <span className="text-xs font-medium text-rose-600">Holiday (Day Off)</span>
                                                         </label>
                                                         <label className="flex items-center gap-1.5 cursor-pointer">
-                                                            <input type="radio" name="hType" checked={newHoliday.type === 'working_day'} onChange={() => setNewHoliday({...newHoliday, type: 'working_day'})} className="accent-emerald-500" />
+                                                            <input type="radio" name="hType" checked={newHoliday.type === 'working_day'} onChange={() => setNewHoliday({ ...newHoliday, type: 'working_day' })} className="accent-emerald-500" />
                                                             <span className="text-xs font-medium text-emerald-600">Working Day</span>
                                                         </label>
                                                     </div>
                                                 </div>
                                                 <div>
                                                     <label className="block text-xs font-medium text-slate-600 mb-1">Date</label>
-                                                    <input type="date" value={newHoliday.date.replace(/\./g, '-')} onChange={e => setNewHoliday({...newHoliday, date: e.target.value.replace(/-/g, '.')})} className="w-full border border-slate-300 rounded px-3 py-1.5 text-sm" />
+                                                    <input type="date" value={newHoliday.date.replace(/\./g, '-')} onChange={e => setNewHoliday({ ...newHoliday, date: e.target.value.replace(/-/g, '.') })} className="w-full border border-slate-300 rounded px-3 py-1.5 text-sm" />
                                                 </div>
                                                 <div>
                                                     <label className="block text-xs font-medium text-slate-600 mb-1">Description</label>
-                                                    <input type="text" value={newHoliday.label} onChange={e => setNewHoliday({...newHoliday, label: e.target.value})} placeholder="e.g. Songkran Festival or Sat Working Day" className="w-full border border-slate-300 rounded px-3 py-1.5 text-sm outline-none focus:border-blue-500" />
+                                                    <input type="text" value={newHoliday.label} onChange={e => setNewHoliday({ ...newHoliday, label: e.target.value })} placeholder="e.g. Songkran Festival or Sat Working Day" className="w-full border border-slate-300 rounded px-3 py-1.5 text-sm outline-none focus:border-blue-500" />
                                                 </div>
                                                 <button onClick={handleSaveHoliday} disabled={!newHoliday.label.trim()} className="w-full py-2 bg-blue-600 text-white text-sm font-medium rounded shadow-sm hover:bg-blue-700 disabled:opacity-50 transition-colors">Add Date</button>
                                             </div>
@@ -3674,8 +3821,8 @@
                                 {view === 'gantt' && (
                                     <>
                                         <div className="w-px bg-slate-300 mx-2 my-1"></div>
-                                        <button 
-                                            onClick={() => setIsEditMode(!isEditMode)} 
+                                        <button
+                                            onClick={() => setIsEditMode(!isEditMode)}
                                             className="flex flex-col items-center justify-center px-2 cursor-pointer outline-none group"
                                             title={isEditMode ? "Disable Edit Mode" : "Enable Edit Mode"}
                                         >
@@ -3782,7 +3929,7 @@
                                                 <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".csv" className="hidden" />
                                             </>
                                         )}
-                                        
+
                                         <button onClick={() => exportToCSV(displayedItems)} className="px-2 py-1 text-[11px] font-semibold whitespace-nowrap bg-slate-100 text-slate-700 hover:bg-slate-200 rounded border border-slate-300 flex items-center gap-1 transition-colors">
                                             <Icons.Download /> CSV
                                         </button>
@@ -3819,7 +3966,7 @@
                                 onUpdateTaskProgress={handleUpdateTaskProgress}
                             />
                         ) : (
-                            <GanttChart 
+                            <GanttChart
                                 isEditMode={isEditMode}
                                 items={displayedItems} scale={scale} onUpdateField={handleUpdateField} onAddChild={handleAddChild}
                                 customHolidays={customHolidays}
@@ -3844,16 +3991,16 @@
                                 previewDates={(id, s, e) => {
                                     const newItems = items.map(i => i.id === id ? { ...i, startDate: s, endDate: e } : i);
                                     updateState(newItems, id, false);
-                                }} 
+                                }}
                                 collapsedIds={collapsedIds} toggleCollapse={(id) => setCollapsedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id])}
-                                colWidths={colWidths} setColWidths={setColWidths} 
+                                colWidths={colWidths} setColWidths={setColWidths}
                                 handleAddDependency={(s, t) => {
                                     const targetTask = items.find(i => i.id === t);
                                     const currentPreds = targetTask.predecessors || [];
                                     if (currentPreds.includes(s)) return;
                                     const newItems = items.map(i => i.id === t ? { ...i, predecessors: [...currentPreds, s] } : i);
                                     updateState(newItems, s, true);
-                                }} 
+                                }}
                                 handleRemoveDependencies={(t, specific) => {
                                     const newItems = items.map(i => {
                                         if (specific) {
@@ -3881,4 +4028,5 @@
         root.render(<App />);
     </script>
 </body>
+
 </html>
