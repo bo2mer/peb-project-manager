@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<body>
+<script type="module">
+import { Client } from "https://cdn.jsdelivr.net/npm/@gradio/client/dist/index.min.js";
+async function test() {
+  try {
+    const client = await Client.connect("RANGSIMUN/peb-project-manager");
+    const result = await client.predict("/ai_assistant", ["Hello"]);
+    console.log("Success:", result.data);
+    document.body.innerHTML = "Success: " + JSON.stringify(result.data);
+  } catch (e) {
+    document.body.innerHTML = "Error: " + e.message;
+  }
+}
+test();
+</script>
+</body>
+</html>
