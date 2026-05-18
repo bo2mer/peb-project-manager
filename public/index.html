@@ -372,9 +372,7 @@
             const [isLoading, setIsLoading] = useState(false);
             const messagesEndRef = useRef(null);
 
-            const scrollToBottom = () => {
-                messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-            };
+            const scrollToBottom = () => {};
 
             useEffect(() => {
                 scrollToBottom();
@@ -496,8 +494,8 @@
                     }
 
                     const label = healthScale === 'week'
-                        ? `Week ${data.length + 1}`
-                        : periodStart.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+                       ? `${periodStart.toLocaleDateString('en-US', { month: 'short' })}-W${data.length + 1}`
+                       : periodStart.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
                     const activeTasks = healthTasks.filter(t => parseDate(t.startDate) <= periodEnd && parseDate(t.endDate) >= periodStart);
                     const totalInPeriod = activeTasks.length;
                     const onTrackInPeriod = activeTasks.filter(t => t.status !== 'Delay').length;
@@ -654,6 +652,11 @@
                         </div>
                         <AIAssistantWidget items={items} />
                     </div>
+
+<div className="text-center text-[10px] text-slate-400 mt-8 pb-2">
+  PE-Body Project Manager | Version beta 1.0.0 | Developed by Rangsimun
+</div>
+
                 </div>
             );
         };
